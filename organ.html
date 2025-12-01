@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Harmonic Synth v5.0 Perfect</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --panel-border: #333;
+            --accent-color: #00ff9d;
+            --accent-dim: rgba(0, 255, 157, 0.2);
+            --text-main: #e0e0e0;
+            --text-sub: #888;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 20px;
+            display: flex; flex-direction: column; align-items: center;
+            height: 100vh; box-sizing: border-box; overflow: hidden;
+            user-select: none;
+        }
+
+        h1 {
+            font-weight: 300; letter-spacing: 4px; margin: 0 0 15px 0;
+            color: var(--accent-color); text-shadow: 0 0 10px var(--accent-dim);
+            font-size: 1.5rem;
+        }
+
+        /* --- ビジュアライザー --- */
+        #visualizer-wrap {
+            width: 100%; max-width: 1000px; height: 120px;
+            background: #000; border: 1px solid var(--panel-border);
+            border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            margin-bottom: 15px; position: relative;
+        }
+        canvas { width: 100%; height: 100%; display: block; border-radius: 6px; }
+
+        /* --- メインコントロールエリア --- */
+        .main-controls {
+            display: flex; gap: 15px; width: 100%; max-width: 1000px;
+            margin-bottom: 15px; height: 140px; flex-shrink: 0;
+        }
+
+        .panel {
+            background: var(--panel-bg); border: 1px solid var(--panel-border);
+            border-radius: 6px; padding: 10px 15px;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+
+        .panel-label {
+            font-size: 0.7rem; color: var(--text-sub); letter-spacing: 1px;
+            margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 2px;
+            text-transform: uppercase;
+        }
+
+        .controls-row { display: flex; gap: 15px; align-items: center; justify-content: center; height: 100%; }
+
+        /* ノブ・スライダー系 */
+        .v-slider-group { display: flex; flex-direction: column; align-items: center; height: 100%; }
+        .v-slider-group label { font-size: 0.6rem; margin-bottom: 5px; color: #aaa; }
+        input[type="range"].neat-slider {
+            -webkit-appearance: slider-vertical; width: 6px; height: 80px; background: transparent; cursor: pointer;
+        }
+
+        /* ボタン系 */
+        .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button {
+            background: #2a2a2a; color: #fff; border: 1px solid #444;
+            padding: 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+        }
+        button:hover { border-color: var(--accent-color); color: var(--accent-color); }
+        button:active { background: var(--accent-color); color: #000; }
+
+        /* --- 倍音スライダー (スクロール) --- */
+        #harmonics-area {
+            width: 100%; max-width: 1000px; height: 160px;
+            background: var(--panel-bg); border: 1px solid var(--panel-border);
+            border-radius: 6px; padding: 10px; box-sizing: border-box;
+            display: flex; overflow-x: auto; gap: 2px; margin-bottom: 10px; flex-shrink: 1;
+        }
+        #harmonics-area::-webkit-scrollbar { height: 8px; }
+        #harmonics-area::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        .h-strip { min-width: 20px; flex-grow: 1; display: flex; flex-direction: column; align-items: center; }
+        .h-strip input { -webkit-appearance: slider-vertical; width: 100%; height: 100%; opacity: 0.7; cursor: grab; }
+        .h-strip input:hover { opacity: 1; }
+        .h-strip label { font-size: 0.5rem; color: #555; margin-top: 4px; }
+
+        /* --- リアルな鍵盤UI (v5改修版) --- */
+        #keyboard-container {
+            width: 100%; max-width: 800px; height: 160px;
+            position: relative; margin-top: auto; background: #111;
+            border-top: 5px solid #000; border-radius: 4px; flex-shrink: 0;
+        }
+
+        .key-label {
+            position: absolute; bottom: 5px; width: 100%; text-align: center;
+            font-size: 0.7rem; color: #888; pointer-events: none; line-height: 1.2;
+        }
+        .key-label span { display: block; font-size: 0.6rem; color: #aaa; } /* PC Key style */
+
+        .white-key {
+            position: absolute; bottom: 0; height: 100%;
+            background: linear-gradient(to bottom, #eee 0%, #fff 100%);
+            border: 1px solid #ccc; border-radius: 0 0 4px 4px;
+            z-index: 1; cursor: pointer; box-shadow: inset 0 -2px 5px rgba(0,0,0,0.1);
+        }
+        /* 押された感のあるデザイン(白鍵) */
+        .white-key.active {
+            background: linear-gradient(to bottom, #bbb 0%, #ccc 100%); /* 暗く */
+            box-shadow: inset 0 3px 10px rgba(0,0,0,0.4); /* 内側の影で凹みを表現 */
+            border-bottom: 1px solid #aaa; height: 99%;
+        }
+        .white-key.active .key-label { color: #555; }
+
+        .black-key {
+            position: absolute; top: 0; height: 60%;
+            background: linear-gradient(to bottom, #333 0%, #111 100%);
+            border: 1px solid #000; border-radius: 0 0 3px 3px;
+            z-index: 2; cursor: pointer;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5), inset 1px 1px 2px rgba(255,255,255,0.2);
+        }
+        /* 押された感のあるデザイン(黒鍵) */
+        .black-key.active {
+            background: #000; /* 真っ黒に */
+            box-shadow: inset 0 2px 5px rgba(255,255,255,0.1); /* わずかな内側の光沢 */
+            height: 59%;
+        }
+        .black-label { color: #ccc; bottom: 8px; }
+        .black-key.active .black-label { color: var(--accent-color); }
+
+        /* レスポンシブ調整 */
+        @media (max-width: 768px) {
+            .main-controls { height: auto; flex-wrap: wrap; gap: 10px; }
+            .panel { width: 45%; flex-grow: 1; }
+            #keyboard-container { height: 120px; }
+            .neat-slider { height: 60px; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>HARMONIC SYNTH <span style="font-size:0.5em; color:#666">v5.0</span></h1>
+
+    <div id="visualizer-wrap">
+        <canvas id="scope"></canvas>
+    </div>
+
+    <div class="main-controls">
+        <div class="panel">
+            <div class="panel-label">Global</div>
+            <div class="controls-row">
+                <div class="v-slider-group"><label>VOL</label><input type="range" id="master-vol" class="neat-slider" min="0" max="1" step="0.01" value="0.4"></div>
+                <div class="v-slider-group"><label>DETUNE</label><input type="range" id="detune" class="neat-slider" min="0" max="1" step="0.01" value="0"></div>
+                <div style="display:flex; flex-direction:column; gap:5px; margin-left:10px;">
+                    <button onclick="changeOctave(1)">OCT +</button>
+                    <span id="oct-disp" style="text-align:center; font-size:0.9rem; color:var(--accent-color)">0</span>
+                    <button onclick="changeOctave(-1)">OCT -</button>
+                </div>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-label">Envelope (ADSR)</div>
+            <div class="controls-row">
+                <div class="v-slider-group"><label>A</label><input type="range" id="adsr-a" class="neat-slider" min="0" max="2" step="0.01" value="0.05"></div>
+                <div class="v-slider-group"><label>D</label><input type="range" id="adsr-d" class="neat-slider" min="0" max="2" step="0.01" value="0.2"></div>
+                <div class="v-slider-group"><label>S</label><input type="range" id="adsr-s" class="neat-slider" min="0" max="1" step="0.01" value="0.6"></div>
+                <div class="v-slider-group"><label>R</label><input type="range" id="adsr-r" class="neat-slider" min="0" max="3" step="0.01" value="0.5"></div>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-label">Presets</div>
+            <div class="preset-grid">
+                <button onclick="setPreset('sine')">Sine</button>
+                <button onclick="setPreset('bell')">Bell</button>
+                <button onclick="setPreset('organ')">Organ</button>
+                <button onclick="setPreset('ep')">E.Piano</button>
+                <button onclick="randomize()">Random</button>
+                <button onclick="resetSliders()">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="harmonics-area">
+        </div>
+
+    <div id="keyboard-container">
+        </div>
+
+    <script>
+        // --- Global Audio Setup ---
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        let masterGain;
+        let analyser;
+
+        const harmonicCount = 50;
+        let harmonicSliders = [];
+        let activeNotes = {}; 
+        let currentOctave = 0;
+
+        // PC Keyboard Map (C3 to E4)
+        const pcKeyMap = {
+            'z':0, 's':1, 'x':2, 'd':3, 'c':4, 'v':5, 'g':6, 'b':7, 'h':8, 'n':9, 'j':10, 'm':11,
+            ',':12, 'l':13, '.':14, ';':15, '/':16
+        };
+        // Reverse map for labels
+        const midiToPcKey = {};
+        for(let key in pcKeyMap) midiToPcKey[pcKeyMap[key]] = key.toUpperCase();
+
+        // UI Initialization
+        window.onload = () => {
+            initHarmonicsUI();
+            initKeyboardUI();
+            
+            // Global Interaction Events
+            const startAudio = () => initAudioContext();
+            document.body.addEventListener('mousedown', startAudio);
+            document.body.addEventListener('touchstart', startAudio, {passive:false});
+
+            document.body.addEventListener('keydown', (e) => {
+                if(!e.repeat && pcKeyMap.hasOwnProperty(e.key)) {
+                    const midiNote = pcKeyMap[e.key] + 48 + (currentOctave * 12);
+                    playNote(midiNote);
+                    highlightKey(pcKeyMap[e.key], true);
+                }
+            });
+            document.body.addEventListener('keyup', (e) => {
+                if(pcKeyMap.hasOwnProperty(e.key)) {
+                    const midiNote = pcKeyMap[e.key] + 48 + (currentOctave * 12);
+                    stopNote(midiNote);
+                    highlightKey(pcKeyMap[e.key], false);
+                }
+            });
+
+            document.getElementById('master-vol').addEventListener('input', (e) => {
+                if(masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value), audioCtx.currentTime, 0.05);
+            });
+        };
+
+        function initAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+                masterGain = audioCtx.createGain();
+                masterGain.gain.value = 0.4;
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 2048;
+                masterGain.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                drawVisualizer();
+            }
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        // --- UI Builders ---
+        function initHarmonicsUI() {
+            const container = document.getElementById('harmonics-area');
+            for(let i=1; i<=harmonicCount; i++) {
+                const strip = document.createElement('div');
+                strip.className = 'h-strip';
+                let labelColor = (i===1) ? '#00ff9d' : ((Math.log2(i)%1===0) ? '#fff' : '#666');
+                strip.innerHTML = `<input type="range" min="0" max="1" step="0.01" value="0" data-idx="${i}"><label style="color:${labelColor}">${i}</label>`;
+                container.appendChild(strip);
+                harmonicSliders.push(strip.querySelector('input'));
+            }
+            harmonicSliders[0].value = 1;
+        }
+
+        // v5: リアルな配置とラベル付き鍵盤生成
+        function initKeyboardUI() {
+            const container = document.getElementById('keyboard-container');
+            container.innerHTML = '';
+
+            // C3(48) から E4(64) までの17鍵
+            const keyStructure = [
+                { note: 'C',  type: 'w', midiOff: 0 }, { note: 'C#', type: 'b', midiOff: 1, ref: 0 },
+                { note: 'D',  type: 'w', midiOff: 2 }, { note: 'D#', type: 'b', midiOff: 3, ref: 1 },
+                { note: 'E',  type: 'w', midiOff: 4 },
+                { note: 'F',  type: 'w', midiOff: 5 }, { note: 'F#', type: 'b', midiOff: 6, ref: 3 },
+                { note: 'G',  type: 'w', midiOff: 7 }, { note: 'G#', type: 'b', midiOff: 8, ref: 4 },
+                { note: 'A',  type: 'w', midiOff: 9 }, { note: 'A#', type: 'b', midiOff: 10, ref: 5 },
+                { note: 'B',  type: 'w', midiOff: 11 },
+                { note: 'C',  type: 'w', midiOff: 12 }, { note: 'C#', type: 'b', midiOff: 13, ref: 7 },
+                { note: 'D',  type: 'w', midiOff: 14 }, { note: 'D#', type: 'b', midiOff: 15, ref: 8 },
+                { note: 'E',  type: 'w', midiOff: 16 }
+            ];
+            
+            const numWhiteKeys = 10; // C,D,E,F,G,A,B,C,D,E
+            const wWidth = 100 / numWhiteKeys;
+            const bWidth = wWidth * 0.7;
+            let wCounter = 0;
+
+            keyStructure.forEach(k => {
+                const div = document.createElement('div');
+                const midiBase = 48 + k.midiOff;
+                const pcKey = midiToPcKey[k.midiOff];
+                div.dataset.midiOffset = k.midiOff;
+
+                if(k.type === 'w') {
+                    div.className = 'white-key';
+                    div.style.width = `${wWidth}%`;
+                    div.style.left = `${wCounter * wWidth}%`;
+                    div.innerHTML = `<div class="key-label">${k.note}<span>[${pcKey}]</span></div>`;
+                    wCounter++;
+                } else {
+                    div.className = 'black-key';
+                    div.style.width = `${bWidth}%`;
+                    // 白鍵の境界をまたぐように配置
+                    const refRight = (k.ref + 1) * wWidth;
+                    div.style.left = `${refRight - (bWidth / 2)}%`;
+                    div.innerHTML = `<div class="key-label black-label"><span>[${pcKey}]</span></div>`;
+                }
+
+                const triggerPlay = (e) => { e.preventDefault(); playNote(midiBase + (currentOctave*12)); div.classList.add('active'); };
+                const triggerStop = (e) => { e.preventDefault(); stopNote(midiBase + (currentOctave*12)); div.classList.remove('active'); };
+
+                div.addEventListener('mousedown', triggerPlay);
+                div.addEventListener('mouseup', triggerStop);
+                div.addEventListener('mouseleave', triggerStop);
+                div.addEventListener('touchstart', triggerPlay, {passive:false});
+                div.addEventListener('touchend', triggerStop);
+                container.appendChild(div);
+            });
+        }
+        
+        // PCキー操作時のハイライト同期
+        function highlightKey(midiOffset, isActive) {
+            const keyEl = document.querySelector(`[data-midi-offset="${midiOffset}"]`);
+            if(keyEl) isActive ? keyEl.classList.add('active') : keyEl.classList.remove('active');
+        }
+
+        // --- Sound Engine ---
+        function playNote(midiNote) {
+            if(activeNotes[midiNote]) return;
+            const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+            const t = audioCtx.currentTime;
+            const atk = parseFloat(document.getElementById('adsr-a').value);
+            const dec = parseFloat(document.getElementById('adsr-d').value);
+            const sus = parseFloat(document.getElementById('adsr-s').value);
+            
+            const noteGain = audioCtx.createGain();
+            noteGain.connect(masterGain);
+            noteGain.gain.setValueAtTime(0, t);
+            noteGain.gain.linearRampToValueAtTime(1, t + atk);
+            noteGain.gain.linearRampToValueAtTime(sus, t + atk + dec);
+
+            const oscs = [];
+            const detune = parseFloat(document.getElementById('detune').value);
+
+            harmonicSliders.forEach((slider, i) => {
+                const val = parseFloat(slider.value);
+                if(val > 0.01) {
+                    const osc = audioCtx.createOscillator();
+                    const hGain = audioCtx.createGain();
+                    const hIdx = i + 1;
+                    const shift = (hIdx * hIdx - 1) * detune * 0.02;
+                    osc.frequency.setValueAtTime(freq * (hIdx + shift), t);
+                    hGain.gain.value = val / Math.pow(hIdx, 0.6); // 少し減衰を強めに調整
+                    osc.connect(hGain); hGain.connect(noteGain);
+                    osc.start(t); oscs.push({osc, hGain});
+                }
+            });
+            activeNotes[midiNote] = { oscs, noteGain };
+        }
+
+        function stopNote(midiNote) {
+            if(!activeNotes[midiNote]) return;
+            const { oscs, noteGain } = activeNotes[midiNote];
+            const t = audioCtx.currentTime;
+            const rel = parseFloat(document.getElementById('adsr-r').value);
+            noteGain.gain.cancelScheduledValues(t);
+            noteGain.gain.setValueAtTime(noteGain.gain.value, t);
+            noteGain.gain.linearRampToValueAtTime(0, t + rel);
+            setTimeout(() => {
+                oscs.forEach(o => { o.osc.stop(); o.osc.disconnect(); o.hGain.disconnect(); });
+                noteGain.disconnect();
+            }, rel * 1000 + 200);
+            delete activeNotes[midiNote];
+        }
+
+        // --- Controls & Visualizer ---
+        function changeOctave(delta) { currentOctave += delta; document.getElementById('oct-disp').innerText = currentOctave; }
+        function resetSliders() { harmonicSliders.forEach(s => s.value = 0); }
+        function setPreset(type) {
+            resetSliders(); document.getElementById('detune').value=0; const s=harmonicSliders;
+            if(type==='sine') s[0].value=1;
+            if(type==='bell') { document.getElementById('detune').value=0.3; document.getElementById('adsr-r').value=1.5; [0,2,4,6,9,11,14,20].forEach(i=>s[i].value=1-(i*0.04)); }
+            if(type==='organ') { document.getElementById('adsr-a').value=0.02; document.getElementById('adsr-r').value=0.1; [0,1,2,3,5,7].forEach(i=>s[i].value=0.8); }
+            if(type==='ep') { document.getElementById('detune').value=0.015; s[0].value=1; s[1].value=0.3; s[2].value=0.15; s[12].value=0.08; }
+        }
+        function randomize() { resetSliders(); harmonicSliders.forEach(s=>{if(Math.random()>0.88)s.value=Math.random();}); }
+
+        function drawVisualizer() {
+            requestAnimationFrame(drawVisualizer);
+            const canvas = document.getElementById('scope'); const ctx = canvas.getContext('2d');
+            const w = canvas.width = canvas.clientWidth; const h = canvas.height = canvas.clientHeight;
+            const bufferLen = analyser.frequencyBinCount;
+            const freqData = new Uint8Array(bufferLen); const timeData = new Uint8Array(bufferLen);
+            analyser.getByteFrequencyData(freqData); analyser.getByteTimeDomainData(timeData);
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+            const barWidth = (w/bufferLen)*2.5; let barX=0;
+            for(let i=0; i<bufferLen; i++) {
+                const barHeight = (freqData[i]/255)*h;
+                ctx.fillStyle = `hsla(${i/bufferLen*300+120},100%,50%,0.6)`;
+                ctx.fillRect(barX, h-barHeight, barWidth, barHeight); barX+=barWidth+1;
+            }
+            ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.beginPath();
+            const sliceWidth = w/bufferLen; let x=0;
+            for(let i=0; i<bufferLen; i++) {
+                const v = timeData[i]/128.0; const y = v*h/2;
+                if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); x+=sliceWidth;
+            }
+            ctx.stroke();
+        }
+    </script>
+</body>
+</html>
